@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="けさの kb">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a2129" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>けさの kb</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<style>
+/* 片手で読む手帳: 上に日付とタブ、本文は1列。表だけ横にスクロール。中身は合言葉で開く */
+:root {
+  --bg: #f3f5f7; --paper: #ffffff; --ink: #1d2733; --sub: #5d6b7a; --line: #d9e0e7;
+  --accent: #2c4f7c; --accent-soft: #e3ebf5; --warn: #b4472e;
+  --display: "Shippori Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #12171d; --paper: #1a2129; --ink: #e4e9ef; --sub: #98a5b3; --line: #2c3742;
+  --accent: #8fb3e3; --accent-soft: #233246; --warn: #e88a70; color-scheme: dark } }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); }
+body { font-family: var(--body); font-size: 16px; line-height: 1.75; -webkit-text-size-adjust: 100%; padding-bottom: env(safe-area-inset-bottom, 0px); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+[hidden] { display: none !important; }
+.wrap { max-width: 44rem; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--paper); border-bottom: 1px solid var(--line); }
+header .wrap { display: flex; flex-direction: column; gap: 6px; padding-block: 10px 8px; }
+.head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.date { font-family: var(--display); font-size: 1.45rem; letter-spacing: .02em; text-wrap: balance; }
+.updated { color: var(--sub); font-size: .8rem; font-variant-numeric: tabular-nums; }
+nav { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+nav button, .btn { flex: none; font: inherit; font-size: .9rem; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--sub); cursor: pointer; }
+nav button[aria-current="true"], .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); font-weight: 700; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+main .wrap { padding-block: 8px 48px; }
+.note { min-width: 0; overflow-wrap: anywhere; }
+.note h1 { display: none; }
+.note h2 { font-family: var(--display); font-size: 1.2rem; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); text-wrap: balance; }
+.note h3 { font-size: 1rem; margin: 18px 0 4px; color: var(--accent); }
+.note p, .note ul, .note ol { margin: 6px 0; }
+.note ul, .note ol { padding-left: 1.3em; }
+.note li { margin: 3px 0; }
+.note a { color: var(--accent); text-underline-offset: 2px; }
+.note code { font-size: .85em; background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; }
+.note blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--line); color: var(--sub); }
+.table { overflow-x: auto; margin: 8px 0; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.table table { border-collapse: collapse; width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
+.table th, .table td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.table tr:last-child td { border-bottom: 0; }
+.table th { color: var(--sub); font-weight: 700; background: var(--accent-soft); }
+.aside { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--sub); font-size: .9rem; }
+.empty { color: var(--sub); padding: 32px 0; }
+.err { color: var(--warn); }
+.lock { display: flex; flex-direction: column; gap: 14px; padding-block: 18vh 32px; max-width: 24rem; }
+.lock h1 { font-family: var(--display); font-size: 1.6rem; margin: 0; }
+.lock p { margin: 0; color: var(--sub); font-size: .92rem; }
+.lock form { display: flex; flex-direction: column; gap: 10px; }
+.lock input { font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+.lock .btn { align-self: flex-start; font-size: 1rem; padding: 8px 20px; }
+.foot { display: flex; justify-content: flex-end; padding-block: 0 32px; }
+</style>
+</head>
+<body>
+<section id="lock" class="wrap lock" hidden>
+  <h1>けさの kb</h1>
+  <p>PC で決めた合言葉を入れてください。この iPhone に覚えておくので、次からは入れなくても開けます。</p>
+  <form id="lockForm">
+    <label for="pass" class="sr">合言葉</label>
+    <input id="pass" type="password" autocomplete="current-password" required>
+    <button class="btn primary" type="submit" id="unlock">開く</button>
+  </form>
+  <p id="lockMsg" class="err" hidden></p>
+</section>
+
+<div id="app" hidden>
+  <header>
+    <div class="wrap">
+      <div class="head-row"><span class="date" id="title">読み込み中</span><span class="updated" id="updated"></span></div>
+      <nav id="tabs" aria-label="表示の切り替え"></nav>
+    </div>
+  </header>
+  <main><div class="wrap"><div class="note" id="view"></div></div></main>
+  <div class="wrap foot"><button class="btn" type="button" id="forget">この iPhone の合言葉を消す</button></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+<script>
+const KEY = "kb-mobile-key";
+const WEEK = "日月火水木金土";
+const label = d => { const t = new Date(d + "T00:00:00"); return `${t.getMonth() + 1}/${t.getDate()}(${WEEK[t.getDay()]})`; };
+const $ = id => document.getElementById(id);
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const tob64 = b => btoa(String.fromCharCode(...new Uint8Array(b)));
+
+const renderer = new marked.Renderer();
+renderer.link = (href, title, text) => /^https?:\/\//.test(href || "") ? `<a href="${href}" target="_blank" rel="noopener">${text}</a>` : text;
+renderer.table = (head, body) => `<div class="table"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+marked.setOptions({ renderer, gfm: true, breaks: false, mangle: false, headerIds: false });
+
+// 生の HTML は出さない(メールの要約などが混ざるため)。音声の印は案内に置き換える
+const render = md => md.split(/^<<audio \d{4}-\d{2}-\d{2}>>$/m).map((part, i) =>
+  (i ? `<div class="aside">聞くニュースの音声は Obsidian か claude.ai のページで聞けます。</div>` : "") +
+  marked.parse(part.replace(/</g, "&lt;"))).join("");
+
+async function deriveRaw(pass, enc) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveBits"]);
+  return crypto.subtle.deriveBits({ name: "PBKDF2", salt: unb64(enc.salt), iterations: enc.iter, hash: "SHA-256" }, base, 256);
+}
+async function decrypt(raw, enc) {
+  const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(enc.iv) }, key, unb64(enc.ct));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+const store = {
+  get() { try { return localStorage.getItem(KEY); } catch (e) { return null; } },
+  set(v) { try { localStorage.setItem(KEY, v); } catch (e) {} },
+  clear() { try { localStorage.removeItem(KEY); } catch (e) {} },
+};
+
+let enc = null, data = null;
+function showLock(msg) {
+  $("app").hidden = true; $("lock").hidden = false;
+  $("lockMsg").hidden = !msg; $("lockMsg").textContent = msg || "";
+}
+
+function show(key) {
+  const view = $("view");
+  if (key === "dash") {
+    $("title").textContent = "ダッシュボード";
+    view.innerHTML = data.dashboard ? render(data.dashboard) : `<p class="empty">ダッシュボードがまだありません。</p>`;
+  } else {
+    const day = data.days.find(d => d.date === key);
+    $("title").textContent = label(key);
+    view.innerHTML = render(day.md);
+  }
+  for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-current", String(b.dataset.key === key));
+  window.scrollTo(0, 0);
+}
+
+function open() {
+  $("lock").hidden = true; $("app").hidden = false;
+  $("updated").textContent = "PC で更新 " + data.updated.slice(5).replace("-", "/");
+  const nav = $("tabs"); nav.innerHTML = "";
+  const items = data.days.map((d, i) => [d.date, i === 0 ? "今日 " + label(d.date) : label(d.date)]);
+  items.splice(Math.min(1, items.length), 0, ["dash", "ダッシュボード"]);
+  for (const [key, text] of items) {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "tab-" + key; b.dataset.key = key; b.textContent = text;
+    b.addEventListener("click", () => show(key));
+    nav.appendChild(b);
+  }
+  show(data.days.length ? data.days[0].date : "dash");
+}
+
+$("lockForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("unlock").disabled = true; $("lockMsg").hidden = true;
+  try {
+    const raw = await deriveRaw($("pass").value, enc);
+    data = await decrypt(raw, enc);
+    store.set(tob64(raw)); $("pass").value = ""; open();
+  } catch (err) { showLock("合言葉が違うようです。PC の合言葉ファイルの1行目と同じか確かめてください。"); }
+  $("unlock").disabled = false;
+});
+$("forget").addEventListener("click", () => { store.clear(); data = null; showLock(); });
+
+(async () => {
+  try {
+    const r = await fetch("data.enc.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    enc = await r.json();
+  } catch (e) {
+    $("lock").hidden = false; $("lockForm").hidden = true;
+    $("lockMsg").hidden = false; $("lockMsg").textContent = "データを読み込めませんでした。電波のよい所で開き直してください。";
+    return;
+  }
+  const saved = store.get();
+  if (saved) {
+    try { data = await decrypt(unb64(saved), enc); open(); return; }
+    catch (e) { store.clear(); showLock("合言葉が変わったようです。もう一度入れてください。"); return; }
+  }
+  showLock();
+})();
+</script>
+</body>
+</html>
