@@ -67,6 +67,18 @@ main .wrap { padding-block: 8px 48px; }
 .lock input { font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
 .lock .btn { align-self: flex-start; font-size: 1rem; padding: 8px 20px; }
 .foot { display: flex; justify-content: flex-end; padding-block: 0 32px; }
+/* 単語テスト: 1枚ずつめくるカード。結果は iPhone のショートカットで Dropbox に置く */
+.quiz { display: flex; flex-direction: column; gap: 14px; padding-top: 16px; }
+.quiz .count { color: var(--sub); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.card { display: flex; flex-direction: column; justify-content: center; gap: 14px; min-height: 42vh; padding: 28px 18px; text-align: center; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; overflow-wrap: anywhere; }
+.card .q { font-size: 1.7rem; font-weight: 700; line-height: 1.4; }
+.card .a { font-size: 1.05rem; }
+.card .ex { color: var(--sub); font-size: .92rem; }
+.quiz .row { display: flex; gap: 10px; }
+.quiz .row .btn { flex: 1; font-size: 1.05rem; padding: 12px; border-radius: 10px; }
+.btn.forgot { border-color: var(--warn); color: var(--warn); font-weight: 700; }
+.quiz .small { display: flex; justify-content: space-between; gap: 10px; }
+.quiz ul { margin: 0; padding-left: 1.3em; }
 </style>
 </head>
 <body>
@@ -132,9 +144,78 @@ function showLock(msg) {
   $("lockMsg").hidden = !msg; $("lockMsg").textContent = msg || "";
 }
 
+// 単語テストの進み具合はこの iPhone にだけ覚えておく(閉じても続きから)
+const SHORTCUT = "単語テスト結果";
+const quizKey = () => "kb-toeic-" + data.toeic.date;
+const quizLoad = () => { try { return JSON.parse(localStorage.getItem(quizKey())) || null; } catch (e) { return null; } };
+const quizSave = q => { try { localStorage.setItem(quizKey(), JSON.stringify(q)); } catch (e) {} };
+let quiz = null;
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function btn(text, cls, fn) { const b = el("button", "btn " + (cls || ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
+
+function showQuiz() {
+  const cards = data.toeic.cards, view = $("view");
+  quiz = quiz || quizLoad() || { i: 0, wrong: [], open: false, sent: false };
+  quizSave(quiz);
+  view.innerHTML = "";
+  const box = el("div", "quiz");
+  if (quiz.i < cards.length) {
+    const c = cards[quiz.i];
+    box.appendChild(el("div", "count", `${quiz.i + 1} / ${cards.length}問 ・ 忘れた ${quiz.wrong.length}`));
+    const card = el("div", "card");
+    card.appendChild(el("div", "q", c.q));
+    if (quiz.open) {
+      card.appendChild(el("div", "a", c.a));
+      if (c.ex) card.appendChild(el("div", "ex", c.ex));
+    } else {
+      card.appendChild(el("div", "ex", "思い浮かべたらタップ"));
+      card.addEventListener("click", () => { quiz.open = true; showQuiz(); });
+    }
+    box.appendChild(card);
+    const row = el("div", "row");
+    const next = forgot => () => { if (forgot) quiz.wrong.push(quiz.i + 1); quiz.i++; quiz.open = false; showQuiz(); };
+    if (quiz.open) { row.appendChild(btn("忘れた", "forgot", next(true))); row.appendChild(btn("覚えてた", "primary", next(false))); }
+    else row.appendChild(btn("答えを見る", "primary", () => { quiz.open = true; showQuiz(); }));
+    box.appendChild(row);
+    if (quiz.i > 0) {
+      const small = el("div", "small");
+      small.appendChild(btn("ひとつ戻る", "", () => {
+        quiz.i--; quiz.open = false; quiz.wrong = quiz.wrong.filter(n => n !== quiz.i + 1); showQuiz();
+      }));
+      box.appendChild(small);
+    }
+  } else {
+    box.appendChild(el("p", "", `${cards.length}問中 覚えてた ${cards.length - quiz.wrong.length}・忘れた ${quiz.wrong.length}`));
+    if (quiz.wrong.length) {
+      const ul = el("ul");
+      for (const n of quiz.wrong) ul.appendChild(el("li", "", cards[n - 1].a));
+      box.appendChild(ul);
+    }
+    const text = `テスト結果 ${data.toeic.date}\n${quiz.wrong.join(",") || "なし"}`;
+    const row = el("div", "row");
+    row.appendChild(btn(quiz.sent ? "もう一度 PC に送る" : "結果を PC に送る", quiz.sent ? "" : "primary", () => {
+      quiz.sent = true; quizSave(quiz);
+      location.href = `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT)}&input=text&text=${encodeURIComponent(text)}`;
+      setTimeout(showQuiz, 500);
+    }));
+    box.appendChild(row);
+    box.appendChild(el("div", "aside", quiz.sent
+      ? "送りました。明日の朝 PC が採点します(Dropbox の「スマホから」に結果のファイルができていれば届いています)。"
+      : `iPhone のショートカット「${SHORTCUT}」が Dropbox に結果を置き、明日の朝 PC が採点します。`));
+    const small = el("div", "small");
+    small.appendChild(btn("最初からやり直す", "", () => { quiz = { i: 0, wrong: [], open: false, sent: false }; showQuiz(); }));
+    box.appendChild(small);
+  }
+  view.appendChild(box);
+}
+
 function show(key) {
   const view = $("view");
-  if (key === "dash") {
+  if (key === "toeic") {
+    $("title").textContent = "単語テスト " + label(data.toeic.date);
+    showQuiz();
+  } else if (key === "dash") {
     $("title").textContent = "ダッシュボード";
     view.innerHTML = data.dashboard ? render(data.dashboard) : `<p class="empty">ダッシュボードがまだありません。</p>`;
   } else {
@@ -152,6 +233,8 @@ function open() {
   const nav = $("tabs"); nav.innerHTML = "";
   const items = data.days.map((d, i) => [d.date, i === 0 ? "今日 " + label(d.date) : label(d.date)]);
   items.splice(Math.min(1, items.length), 0, ["dash", "ダッシュボード"]);
+  if (data.toeic) items.splice(Math.min(1, items.length), 0, ["toeic", "単語テスト"]);
+  quiz = null;
   for (const [key, text] of items) {
     const b = document.createElement("button");
     b.type = "button"; b.id = "tab-" + key; b.dataset.key = key; b.textContent = text;
