@@ -59,6 +59,11 @@ main .wrap { padding-block: 8px 48px; }
 .table th { color: var(--sub); font-weight: 700; background: var(--accent-soft); }
 .aside { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--sub); font-size: .9rem; }
 .empty { color: var(--sub); padding: 32px 0; }
+/* 勉強タブ: 休日・水曜は型を2つから選ぶ */
+.seg { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 0; }
+.seg button { font: inherit; font-size: .9rem; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--sub); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.src { color: var(--sub); font-size: .8rem; margin-top: 24px; }
 .err { color: var(--warn); }
 .lock { display: flex; flex-direction: column; gap: 14px; padding-block: 18vh 32px; max-width: 24rem; }
 .lock h1 { font-family: var(--display); font-size: 1.6rem; margin: 0; }
@@ -210,6 +215,28 @@ function showQuiz() {
   view.appendChild(box);
 }
 
+// 今日の勉強。休日・水曜は型が2つあり、どちらにしたかはこの端末に覚えておく
+function showStudy(view) {
+  const s = data.study, vkey = "kb-study-" + s.date;
+  let pick = ""; try { pick = localStorage.getItem(vkey) || ""; } catch (e) {}
+  const v = s.variants.find(x => x.key === pick) || s.variants[0];
+  view.innerHTML = "";
+  if (s.variants.length > 1) {
+    const seg = document.createElement("div"); seg.className = "seg";
+    for (const x of s.variants) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = x.label; b.setAttribute("aria-pressed", String(x === v));
+      b.addEventListener("click", () => { try { localStorage.setItem(vkey, x.key); } catch (e) {} showStudy(view); });
+      seg.appendChild(b);
+    }
+    view.appendChild(seg);
+  }
+  view.insertAdjacentHTML("beforeend", render(v.md));
+  const src = document.createElement("p"); src.className = "src";
+  src.textContent = `${label(s.date)}の分。進み具合: ${s.source}`;
+  view.appendChild(src);
+}
+
 function show(key) {
   const view = $("view");
   if (key === "toeic") {
@@ -218,6 +245,9 @@ function show(key) {
   } else if (key === "dash") {
     $("title").textContent = "ダッシュボード";
     view.innerHTML = data.dashboard ? render(data.dashboard) : `<p class="empty">ダッシュボードがまだありません。</p>`;
+  } else if (key === "study") {
+    $("title").textContent = "今日の勉強";
+    showStudy(view);
   } else {
     const day = data.days.find(d => d.date === key);
     $("title").textContent = label(key);
@@ -234,6 +264,7 @@ function open() {
   const items = data.days.map((d, i) => [d.date, i === 0 ? "今日 " + label(d.date) : label(d.date)]);
   items.splice(Math.min(1, items.length), 0, ["dash", "ダッシュボード"]);
   if (data.toeic) items.splice(Math.min(1, items.length), 0, ["toeic", "単語テスト"]);
+  if (data.study) items.splice(Math.min(1, items.length), 0, ["study", "勉強"]);
   quiz = null;
   for (const [key, text] of items) {
     const b = document.createElement("button");
