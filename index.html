@@ -84,6 +84,14 @@ main .wrap { padding-block: 8px 48px; }
 .btn.forgot { border-color: var(--warn); color: var(--warn); font-weight: 700; }
 .quiz .small { display: flex; justify-content: space-between; gap: 10px; }
 .quiz ul { margin: 0; padding-left: 1.3em; }
+/* 勉強メモ: できなかった・変えたことを iPhone のショートカットで Dropbox に置く */
+.memo { display: flex; flex-direction: column; gap: 10px; margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line); }
+.memo h2 { margin: 0; font-size: 1.05rem; }
+.memo .seg { margin: 0; }
+.memo label { color: var(--sub); font-size: .85rem; }
+.memo textarea { font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); resize: vertical; min-height: 2.6em; }
+.memo .row { display: flex; }
+.memo .row .btn { flex: 1; font-size: 1.05rem; padding: 10px; border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -235,6 +243,53 @@ function showStudy(view) {
   const src = document.createElement("p"); src.className = "src";
   src.textContent = `${label(s.date)}の分。進み具合: ${s.source}`;
   view.appendChild(src);
+  view.appendChild(memoBox(view));
+}
+
+// 1日の終わりの勉強メモ。ショートカット「勉強メモ」が txt にして Dropbox に置き、土曜の見直しが読む
+const MEMO_SHORTCUT = "勉強メモ";
+let memoDay = null, memoSent = "";
+function memoBox(view) {
+  const box = el("div", "memo");
+  box.appendChild(el("h2", "", "今日のメモ"));
+  const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+  if (memoDay === null) memoDay = now.getHours() < 4 ? 1 : 0;  // 夜中に書くときは前の日の分
+  const md = d => `${d.getMonth() + 1}/${d.getDate()}`;
+  const seg = el("div", "seg");
+  [[`今日 ${md(today)}`, 0], [`昨日 ${md(yest)}`, 1]].forEach(([t, k]) => {
+    const b = el("button", "", t); b.type = "button"; b.setAttribute("aria-pressed", String(memoDay === k));
+    b.addEventListener("click", () => {  // 書きかけを消さないよう、ボタンの表示だけ替える
+      memoDay = k; seg.querySelectorAll("button").forEach((x, i) => x.setAttribute("aria-pressed", String(i === k)));
+    });
+    seg.appendChild(b);
+  });
+  box.appendChild(seg);
+  const field = (key, text) => {
+    const id = "memo-" + key, l = el("label", "", text); l.htmlFor = id;
+    const t = el("textarea"); t.id = id; t.rows = 2;
+    try { t.value = localStorage.getItem("kb-" + id) || ""; } catch (e) {}
+    t.addEventListener("input", () => { try { localStorage.setItem("kb-" + id, t.value); } catch (e) {} });
+    box.appendChild(l); box.appendChild(t);
+    return t;
+  };
+  const ng = field("ng", "できなかった"), ch = field("ch", "変えた");
+  const row = el("div", "row");
+  row.appendChild(btn("PC に送る", "primary", () => {
+    const one = s => s.trim().replace(/\s*\n\s*/g, " ");
+    const parts = [one(ng.value) && `できなかった ${one(ng.value)}`, one(ch.value) && `変えた ${one(ch.value)}`].filter(Boolean);
+    if (!parts.length) { ng.focus(); return; }
+    const text = `- ${md(memoDay ? yest : today)} ${parts.join(" / ")}`;
+    for (const k of ["ng", "ch"]) try { localStorage.removeItem("kb-memo-" + k); } catch (e) {}
+    memoSent = text;
+    location.href = `shortcuts://run-shortcut?name=${encodeURIComponent(MEMO_SHORTCUT)}&input=text&text=${encodeURIComponent(text)}`;
+    setTimeout(() => showStudy(view), 500);
+  }));
+  box.appendChild(row);
+  box.appendChild(el("div", "aside", memoSent
+    ? `送りました: ${memoSent}(Dropbox の「勉強メモ スマホから」に txt ができていれば届いています)`
+    : `片方だけでもよい。ショートカット「${MEMO_SHORTCUT}」が Dropbox に置き、土曜の見直しが来週の計画に反映します。`));
+  return box;
 }
 
 function show(key) {
