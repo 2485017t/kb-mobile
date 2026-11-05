@@ -64,6 +64,7 @@ main .wrap { padding-block: 8px 48px; }
 .seg button { font: inherit; font-size: .9rem; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--sub); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .src { color: var(--sub); font-size: .8rem; margin-top: 24px; }
+h2.next { font-family: var(--display); font-size: 1.35rem; margin: 36px 0 12px; padding-top: 20px; border-top: 3px double var(--line); }
 .err { color: var(--warn); }
 .lock { display: flex; flex-direction: column; gap: 14px; padding-block: 18vh 32px; max-width: 24rem; }
 .lock h1 { font-family: var(--display); font-size: 1.6rem; margin: 0; }
@@ -223,12 +224,23 @@ function showQuiz() {
   view.appendChild(box);
 }
 
-// 今日の勉強。休日・水曜は型が2つあり、どちらにしたかはこの端末に覚えておく
+// 今日と明日の勉強。休日・水曜は型が2つあり、どちらにしたかは日ごとにこの端末に覚えておく
 function showStudy(view) {
-  const s = data.study, vkey = "kb-study-" + s.date;
+  const y = window.scrollY;
+  view.innerHTML = "";
+  studyDay(view, data.study);
+  if (data.study.next) {
+    view.appendChild(el("h2", "next", `明日 ${label(data.study.next.date)}の勉強`));
+    studyDay(view, data.study.next);
+  }
+  view.appendChild(memoBox(view));
+  window.scrollTo(0, y);  // 明日の型を選び直しても、見ている位置のまま
+}
+
+function studyDay(view, s) {
+  const vkey = "kb-study-" + s.date;
   let pick = ""; try { pick = localStorage.getItem(vkey) || ""; } catch (e) {}
   const v = s.variants.find(x => x.key === pick) || s.variants[0];
-  view.innerHTML = "";
   if (s.variants.length > 1) {
     const seg = document.createElement("div"); seg.className = "seg";
     for (const x of s.variants) {
@@ -243,7 +255,6 @@ function showStudy(view) {
   const src = document.createElement("p"); src.className = "src";
   src.textContent = `${label(s.date)}の分。進み具合: ${s.source}`;
   view.appendChild(src);
-  view.appendChild(memoBox(view));
 }
 
 // 1日の終わりの勉強メモ。ショートカット「勉強メモ」が txt にして Dropbox に置き、土曜の見直しが読む
