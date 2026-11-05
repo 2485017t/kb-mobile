@@ -312,7 +312,7 @@ function show(key) {
     $("title").textContent = "ダッシュボード";
     view.innerHTML = data.dashboard ? render(data.dashboard) : `<p class="empty">ダッシュボードがまだありません。</p>`;
   } else if (key === "study") {
-    $("title").textContent = "今日の勉強";
+    $("title").textContent = "今日と明日の勉強";
     showStudy(view);
   } else {
     const day = data.days.find(d => d.date === key);
