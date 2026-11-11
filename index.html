@@ -129,7 +129,21 @@ details.focus li { margin: 5px 0; }
 .toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--head-h, 92px)); z-index: 4; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--line); }
 .anchor { scroll-margin-top: calc(var(--head-h, 92px) + 52px); }
 /* 日ごとのタブ: カレンダーはリンク、メール・ニュースはたたむ */
-.calrow { margin: 20px 0 4px; }
+.calrow { margin: 20px 0 4px; display: flex; flex-wrap: wrap; gap: 8px; }
+/* タスクのタブ(Notion の GTD) */
+.gtd-group h2 { display: flex; align-items: baseline; gap: 8px; }
+.gtd-n { color: var(--sub); font-family: var(--body); font-size: .8rem; font-weight: 400; }
+details.gtd-group > summary .gtd-n { margin-left: 8px; }
+.note ul.gtd { list-style: none; padding: 0; margin: 6px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); overflow: hidden; }
+.note ul.gtd li { margin: 0; padding: 10px 12px; line-height: 1.6; }
+.note ul.gtd li + li { border-top: 1px solid var(--line); }
+.note ul.gtd li.today { box-shadow: inset 3px 0 0 var(--accent); }
+.note ul.gtd a { color: var(--ink); text-decoration: none; }
+.gtd .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.gtd .meta .lab { margin: 0; }
+.gtd .lab.doing { background: transparent; border: 1px solid var(--accent); }
+.gtd .mins { color: var(--sub); font-size: .8rem; }
+details.gtd-group ul.gtd { margin-top: 8px; }
 .note li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.3em; padding-left: 1.4em; text-indent: -1.4em; }
 .note li > input[type="checkbox"] { margin: 0 .4em 0 0; }
 .btn.cal { display: inline-block; text-decoration: none; color: var(--accent); border-color: var(--accent); font-weight: 700; padding: 6px 14px; }
@@ -515,7 +529,9 @@ function showDay(view, day, isToday) {
       view.appendChild(mdBox(b.md));
     } else if (b.kind === "cal") {
       const a = el("a", "btn cal", "📅 カレンダーで予定を見る"); a.href = CAL; a.target = "_blank"; a.rel = "noopener";
-      const row = el("p", "calrow"); row.appendChild(a); view.appendChild(row);
+      const row = el("p", "calrow"); row.appendChild(a);
+      if (isToday && data.gtd && data.gtd.url) row.appendChild(gtdLink(data.gtd.url, "✅ Notion のタスク"));
+      view.appendChild(row);
       if (b.md) view.appendChild(mdBox(b.md, "sub"));
     } else {
       const f = el("details", "sec");
@@ -530,6 +546,45 @@ function showDay(view, day, isToday) {
     const f = el("details", "sec"); f.appendChild(el("summary", "", "この日のタスク"));
     f.appendChild(mdBox(day.tasks)); view.appendChild(f);
   }
+}
+
+// タスクのタブ: Notion の GTD taskDB の未完了タスクを option ごとに。今日の計画から入ったものに「今日」。
+// 上の2つ(すぐにやること・次にやるべきこと)は開き、ほかはたたむ。Notion が読めない日は Daily のタスクを出す
+const GTD_OPEN = ["☑すぐにやること", "🔆次にやるべきこと"];
+function gtdLink(url, text) { const a = el("a", "btn cal", text); a.href = url; a.target = "_blank"; a.rel = "noopener"; return a; }
+function showTasks(view) {
+  view.innerHTML = "";
+  const g = data.gtd, daily = data.days[0] && data.days[0].tasks;
+  if (g && g.url) { const row = el("p", "calrow"); row.appendChild(gtdLink(g.url, "✅ Notion の GTD を開く")); view.appendChild(row); }
+  if (!g || !g.tasks) {
+    view.appendChild(el("p", "sub", `Notion のタスクを読めなかったので、今日の計画のタスクを出しています${g && g.error ? `(${g.error})` : ""}。`));
+    view.appendChild(daily ? mdBox(daily) : el("p", "empty", "今日のタスクはまだありません(朝の計画ができると入ります)。"));
+    return;
+  }
+  if (!g.tasks.length) { view.appendChild(el("p", "empty", "未完了のタスクはありません。")); return; }
+  const groups = new Map();
+  for (const t of g.tasks) { const k = t.option || "(option なし)"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); }
+  for (const [opt, list] of groups) {
+    const box = GTD_OPEN.includes(opt) ? el("section", "gtd-group") : el("details", "sec gtd-group");
+    const head = el(GTD_OPEN.includes(opt) ? "h2" : "summary", "", opt);
+    head.appendChild(el("span", "gtd-n", `${list.length}件`));
+    box.appendChild(head);
+    const ul = el("ul", "gtd");
+    for (const t of [...list].sort((x, y) => y.today - x.today)) {  // 今日の計画の分を上に
+      const li = el("li", t.today ? "today" : "");
+      const a = el("a", "", t.name); a.href = t.url; a.target = "_blank"; a.rel = "noopener";
+      li.appendChild(a);
+      const meta = el("span", "meta");
+      if (t.today) meta.appendChild(el("span", "lab", "今日"));
+      if (t.status === "進行中") meta.appendChild(el("span", "lab doing", "進行中"));
+      if (t.minutes) meta.appendChild(el("span", "mins", `${t.minutes}分`));
+      if (meta.childNodes.length) li.appendChild(meta);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+    view.appendChild(box);
+  }
+  view.appendChild(el("p", "src", `Notion の GTD taskDB(${g.at} に読んだ)。終わったら Notion でステータスを「完了」に`));
 }
 
 // 今日のメモは右上のボタンから、どのタブ・どの位置でも開ける
@@ -561,9 +616,8 @@ function show(key) {
     $("title").textContent = "勉強";
     showStudy(view);
   } else if (key === "tasks") {
-    $("title").textContent = "タスク " + label(data.days[0].date);
-    view.innerHTML = data.days[0].tasks ? "" : `<p class="empty">今日のタスクはまだありません(朝の計画ができると入ります)。</p>`;
-    if (data.days[0].tasks) view.appendChild(mdBox(data.days[0].tasks));
+    $("title").textContent = "タスク" + (data.days[0] ? " " + label(data.days[0].date) : "");
+    showTasks(view);
   } else {
     const day = data.days.find(d => d.date === key);
     $("title").textContent = label(key);
@@ -582,7 +636,7 @@ function open() {
   items.splice(Math.min(1, items.length), 0, ["dash", "ダッシュボード"]);
   if (data.toeic) items.splice(Math.min(1, items.length), 0, ["toeic", "単語テスト"]);
   if (data.study) items.splice(Math.min(1, items.length), 0, ["study", "勉強"]);
-  if (data.days.length && data.days[0].blocks) items.splice(1, 0, ["tasks", "タスク"]);
+  if ((data.days.length && data.days[0].blocks) || data.gtd) items.splice(1, 0, ["tasks", "タスク"]);
   quiz = null;
   for (const [key, text] of items) {
     const b = document.createElement("button");
