@@ -144,6 +144,10 @@ details.gtd-group > summary .gtd-n { margin-left: 8px; }
 .gtd .lab.doing { background: transparent; border: 1px solid var(--accent); }
 .gtd .mins { color: var(--sub); font-size: .8rem; }
 details.gtd-group ul.gtd { margin-top: 8px; }
+.note ul.gtd li { display: flex; align-items: flex-start; gap: 8px; }
+.gtd .body { flex: 1; min-width: 0; }
+.gtd .del { flex: none; border: 1px solid var(--line); background: transparent; color: var(--sub); border-radius: 8px; padding: 2px 8px; font-size: .9rem; }
+.gtd li.gone { opacity: .4; }
 .note li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.3em; padding-left: 1.4em; text-indent: -1.4em; }
 .note li > input[type="checkbox"] { margin: 0 .4em 0 0; }
 .btn.cal { display: inline-block; text-decoration: none; color: var(--accent); border-color: var(--accent); font-weight: 700; padding: 6px 14px; }
@@ -552,6 +556,21 @@ function showDay(view, day, isToday) {
 // 上の2つ(すぐにやること・次にやるべきこと)は開き、ほかはたたむ。Notion が読めない日は Daily のタスクを出す
 const GTD_OPEN = ["☑すぐにやること", "🔆次にやるべきこと"];
 function gtdLink(url, text) { const a = el("a", "btn cal", text); a.href = url; a.target = "_blank"; a.rel = "noopener"; return a; }
+// 🗑: Notion のページ id だけを ntfy に送る(公開サーバーなので名前は送らない)。PC の次のページ作り(朝・夜)で受け取り、
+// 次の朝の計画(kb-plan)が Notion で option を「🗑️ゴミ箱」にする。それまではこの端末で隠しておく(3日で忘れる)
+const GTD_DEL_KEY = "kb-gtd-del";
+const gtdGone = () => { try { const o = JSON.parse(localStorage.getItem(GTD_DEL_KEY)) || {}; const now = Date.now();
+  for (const k in o) if (now - o[k] > 3 * 864e5) delete o[k]; return o; } catch (e) { return {}; } };
+const gtdForget = id => { try { const o = gtdGone(); o[id] = Date.now(); localStorage.setItem(GTD_DEL_KEY, JSON.stringify(o)); } catch (e) {} };
+async function gtdTrash(t, li, btn) {
+  if (!confirm(`「${t.name}」を Notion のゴミ箱に入れますか?(次の朝の計画で反映)`)) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch("https://ntfy.sh/" + data.gtd.del_topic, { method: "POST", body: t.id });
+    if (!r.ok) throw new Error(r.status);
+    gtdForget(t.id); li.classList.add("gone"); btn.textContent = "済";
+  } catch (e) { btn.disabled = false; alert("送れませんでした(通信を確かめてもう一度)"); }
+}
 function showTasks(view) {
   view.innerHTML = "";
   const g = data.gtd, daily = data.days[0] && data.days[0].tasks;
@@ -563,7 +582,8 @@ function showTasks(view) {
   }
   if (!g.tasks.length) { view.appendChild(el("p", "empty", "未完了のタスクはありません。")); return; }
   const groups = new Map();
-  for (const t of g.tasks) { const k = t.option || "(option なし)"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); }
+  const gone = gtdGone();
+  for (const t of g.tasks) { if (t.id && gone[t.id]) continue; const k = t.option || "(option なし)"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); }
   for (const [opt, list] of groups) {
     const box = GTD_OPEN.includes(opt) ? el("section", "gtd-group") : el("details", "sec gtd-group");
     const head = el(GTD_OPEN.includes(opt) ? "h2" : "summary", "", opt);
@@ -571,20 +591,22 @@ function showTasks(view) {
     box.appendChild(head);
     const ul = el("ul", "gtd");
     for (const t of [...list].sort((x, y) => y.today - x.today)) {  // 今日の計画の分を上に
-      const li = el("li", t.today ? "today" : "");
+      const li = el("li", t.today ? "today" : ""), body = el("div", "body");
       const a = el("a", "", t.name); a.href = t.url; a.target = "_blank"; a.rel = "noopener";
-      li.appendChild(a);
+      body.appendChild(a); li.appendChild(body);
       const meta = el("span", "meta");
       if (t.today) meta.appendChild(el("span", "lab", "今日"));
       if (t.status === "進行中") meta.appendChild(el("span", "lab doing", "進行中"));
       if (t.minutes) meta.appendChild(el("span", "mins", `${t.minutes}分`));
-      if (meta.childNodes.length) li.appendChild(meta);
+      if (meta.childNodes.length) body.appendChild(meta);
+      if (g.del_topic && t.id) { const b = el("button", "del", "🗑"); b.type = "button"; b.setAttribute("aria-label", "ゴミ箱に入れる");
+        b.addEventListener("click", () => gtdTrash(t, li, b)); li.appendChild(b); }
       ul.appendChild(li);
     }
     box.appendChild(ul);
     view.appendChild(box);
   }
-  view.appendChild(el("p", "src", `Notion の GTD taskDB(${g.at} に読んだ)。終わったら Notion でステータスを「完了」に`));
+  view.appendChild(el("p", "src", `Notion の GTD taskDB(${g.at} に読んだ)。終わったら Notion でステータスを「完了」に。要らないものは🗑(次の朝に Notion でゴミ箱へ)`));
 }
 
 // 今日のメモは右上のボタンから、どのタブ・どの位置でも開ける
