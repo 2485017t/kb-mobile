@@ -95,6 +95,28 @@ details.next > summary { font-family: var(--display); font-size: 1.25rem; }
 .lock input { font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
 .lock .btn { align-self: flex-start; font-size: 1rem; padding: 8px 20px; }
 .foot { display: flex; justify-content: flex-end; padding-block: 0 32px; }
+/* 勉強タブの目次: ヘッダーの下に貼りつく */
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--head-h, 92px)); z-index: 4; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.anchor { scroll-margin-top: calc(var(--head-h, 92px) + 52px); }
+/* 日ごとのタブ: カレンダーはリンク、メール・ニュースはたたむ */
+.calrow { margin: 20px 0 4px; }
+.note li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.3em; padding-left: 1.4em; text-indent: -1.4em; }
+.note li > input[type="checkbox"] { margin: 0 .4em 0 0; }
+.btn.cal { display: inline-block; text-decoration: none; color: var(--accent); border-color: var(--accent); font-weight: 700; padding: 6px 14px; }
+.sub { color: var(--sub); font-size: .88rem; }
+details.sec { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+details.sec > summary { font-weight: 700; }
+details.sec > summary.warn { color: var(--warn); }
+details.sec .count { display: block; margin-left: 1.1em; font-weight: 400; font-size: .82rem; color: var(--sub); }
+details.sec > summary.warn .count { color: var(--warn); }
+/* 今日のメモ: 右上のボタンで下から出す */
+.head-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.btn.memo-btn { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+.sheet { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .45); display: flex; align-items: flex-end; }
+.sheet-box { width: 100%; max-height: 88vh; overflow-y: auto; background: var(--paper); border-radius: 14px 14px 0 0; padding-top: 12px; padding-bottom: max(20px, env(safe-area-inset-bottom, 0px)); }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 1.05rem; }
+.sheet .memo { margin-top: 8px; padding-top: 0; border-top: 0; }
+body.sheet-open { overflow: hidden; }
 /* 単語テスト: 1枚ずつめくるカード。結果は iPhone のショートカットで Dropbox に置く */
 .quiz { display: flex; flex-direction: column; gap: 14px; padding-top: 16px; }
 .quiz .count { color: var(--sub); font-size: .85rem; font-variant-numeric: tabular-nums; }
@@ -132,11 +154,17 @@ details.next > summary { font-family: var(--display); font-size: 1.25rem; }
 <div id="app" hidden>
   <header>
     <div class="wrap">
-      <div class="head-row"><span class="date" id="title">読み込み中</span><span class="updated" id="updated"></span></div>
+      <div class="head-row"><span class="date" id="title">読み込み中</span><span class="head-right"><span class="updated" id="updated"></span><button class="btn memo-btn" type="button" id="memoBtn" aria-haspopup="dialog">✎ メモ</button></span></div>
       <nav id="tabs" aria-label="表示の切り替え"></nav>
     </div>
   </header>
   <main><div class="wrap"><div class="note" id="view"></div></div></main>
+  <div class="sheet" id="memoSheet" role="dialog" aria-modal="true" aria-labelledby="memoTitle" hidden>
+    <div class="sheet-box wrap">
+      <div class="sheet-head"><span id="memoTitle">今日のメモ</span><button class="btn" type="button" id="memoClose">閉じる</button></div>
+      <div id="memoBody"></div>
+    </div>
+  </div>
   <div class="wrap foot"><button class="btn" type="button" id="forget">この iPhone の合言葉を消す</button></div>
 </div>
 
@@ -260,17 +288,30 @@ function fold(cls, key, def, summary) {
 function showStudy(view) {
   const y = window.scrollY;
   view.innerHTML = "";
-  studyDay(view, data.study);
-  if (data.study.next) {
-    const nx = fold("next", "next", false, `明日 ${label(data.study.next.date)}の勉強`);
-    studyDay(nx, data.study.next);
+  const nxt = data.study.next;
+  // 目次: 今日・やり方・明日。ヘッダーの下に貼りつき、押すとそこへ飛ぶ(明日はたたんであれば開く)
+  const toc = el("nav", "toc"); toc.setAttribute("aria-label", "勉強の目次");
+  const jump = (text, id) => toc.appendChild(btn(text, "", () => {
+    const t = $(id); if (!t) return;
+    if (t.tagName === "DETAILS") t.open = true;
+    t.scrollIntoView({ block: "start", behavior: "smooth" });
+  }));
+  jump(`今日 ${label(data.study.date)}`, "study-today");
+  jump("やり方", "study-how-today");
+  if (nxt) jump(`明日 ${label(nxt.date)}`, "study-next");
+  view.appendChild(toc);
+  const today = el("div"); today.id = "study-today"; today.className = "anchor";
+  studyDay(today, data.study, "today");
+  view.appendChild(today);
+  if (nxt) {
+    const nx = fold("next anchor", "next", false, `明日 ${label(nxt.date)}の勉強`); nx.id = "study-next";
+    studyDay(nx, nxt, "next");
     view.appendChild(nx);
   }
-  view.appendChild(memoBox(view));
   window.scrollTo(0, y);  // 明日の型を選び直しても、見ている位置のまま
 }
 
-function studyDay(view, s) {
+function studyDay(view, s, id) {
   const vkey = "kb-study-" + s.date;
   let pick = ""; try { pick = localStorage.getItem(vkey) || ""; } catch (e) {}
   const v = s.variants.find(x => x.key === pick) || s.variants[0];
@@ -315,7 +356,8 @@ function studyDay(view, s) {
       plan.appendChild(row);
     }
     view.appendChild(plan);
-    view.appendChild(el("h2", "", "やり方"));
+    const how = el("h2", "anchor", "やり方"); how.id = "study-how-" + id;
+    view.appendChild(how);
     const dl = el("dl", "how");
     for (const [k, t] of v.how) { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", t)); }
     view.appendChild(dl);
@@ -326,9 +368,8 @@ function studyDay(view, s) {
 // 1日の終わりの勉強メモ。ショートカット「勉強メモ」が txt にして Dropbox に置き、土曜の見直しが読む
 const MEMO_SHORTCUT = "勉強メモ";
 let memoDay = null, memoSent = "";
-function memoBox(view) {
+function memoBox(rerender) {
   const box = el("div", "memo");
-  box.appendChild(el("h2", "", "今日のメモ"));
   const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yest = new Date(today); yest.setDate(yest.getDate() - 1);
   if (memoDay === null) memoDay = now.getHours() < 4 ? 1 : 0;  // 夜中に書くときは前の日の分
@@ -360,7 +401,7 @@ function memoBox(view) {
     for (const k of ["ng", "ch"]) try { localStorage.removeItem("kb-memo-" + k); } catch (e) {}
     memoSent = text;
     location.href = `shortcuts://run-shortcut?name=${encodeURIComponent(MEMO_SHORTCUT)}&input=text&text=${encodeURIComponent(text)}`;
-    setTimeout(() => showStudy(view), 500);
+    setTimeout(rerender, 500);
   }));
   box.appendChild(row);
   box.appendChild(el("div", "aside", memoSent
@@ -368,6 +409,53 @@ function memoBox(view) {
     : `片方だけでもよい。ショートカット「${MEMO_SHORTCUT}」が Dropbox に置き、土曜の見直しが来週の計画に反映します。`));
   return box;
 }
+
+// 日ごとのタブ。Daily をそのまま出さず、計画と単語を上に、カレンダーはリンクだけ、メール・ニュース・計画のメモはたたむ。
+// 今日のタスク(やること・すぐ済むこと・持ち越し)は「タスク」のタブ、過ぎた日のタスクはたたんでここに
+const CAL = "https://calendar.google.com/calendar/r/week";
+function showDay(view, day, isToday) {
+  if (!day.blocks) { view.innerHTML = render(day.md); return; }
+  view.innerHTML = "";
+  const order = { plain: 0, cal: 1, fold: 2 };
+  const blocks = [...day.blocks].sort((a, b) => order[a.kind] - order[b.kind]);
+  for (const b of blocks) {
+    if (b.kind === "plain") {
+      if (b.title) view.appendChild(el("h2", "", b.title));
+      view.insertAdjacentHTML("beforeend", render(b.md));
+    } else if (b.kind === "cal") {
+      const a = el("a", "btn cal", "📅 カレンダーで予定を見る"); a.href = CAL; a.target = "_blank"; a.rel = "noopener";
+      const row = el("p", "calrow"); row.appendChild(a); view.appendChild(row);
+      if (b.md) view.insertAdjacentHTML("beforeend", `<div class="sub">${render(b.md)}</div>`);
+    } else {
+      const f = el("details", "sec");
+      const sm = el("summary", b.warn ? "warn" : "", b.title);
+      if (b.summary) sm.appendChild(el("span", "count", b.summary));
+      f.appendChild(sm);
+      f.insertAdjacentHTML("beforeend", render(b.md));
+      view.appendChild(f);
+    }
+  }
+  if (!isToday && day.tasks) {
+    const f = el("details", "sec"); f.appendChild(el("summary", "", "この日のタスク"));
+    f.insertAdjacentHTML("beforeend", render(day.tasks)); view.appendChild(f);
+  }
+}
+
+// 今日のメモは右上のボタンから、どのタブ・どの位置でも開ける
+function openMemo() {
+  const body = $("memoBody"); body.innerHTML = "";
+  body.appendChild(memoBox(openMemo));
+  $("memoSheet").hidden = false;
+  document.body.classList.add("sheet-open");
+}
+function closeMemo() { $("memoSheet").hidden = true; document.body.classList.remove("sheet-open"); }
+$("memoBtn").addEventListener("click", openMemo);
+// 目次がヘッダーのすぐ下に貼りつくよう、ヘッダーの高さを CSS に渡す
+const headH = () => document.documentElement.style.setProperty("--head-h", document.querySelector("header").offsetHeight + "px");
+if (window.ResizeObserver) new ResizeObserver(headH).observe(document.querySelector("header"));
+window.addEventListener("resize", headH);
+$("memoClose").addEventListener("click", closeMemo);
+$("memoSheet").addEventListener("click", e => { if (e.target === $("memoSheet")) closeMemo(); });
 
 function show(key) {
   const view = $("view");
@@ -378,14 +466,18 @@ function show(key) {
     $("title").textContent = "ダッシュボード";
     view.innerHTML = data.dashboard ? render(data.dashboard) : `<p class="empty">ダッシュボードがまだありません。</p>`;
   } else if (key === "study") {
-    $("title").textContent = "今日と明日の勉強";
+    $("title").textContent = "勉強";
     showStudy(view);
+  } else if (key === "tasks") {
+    $("title").textContent = "タスク " + label(data.days[0].date);
+    view.innerHTML = data.days[0].tasks ? render(data.days[0].tasks) : `<p class="empty">今日のタスクはまだありません(朝の計画ができると入ります)。</p>`;
   } else {
     const day = data.days.find(d => d.date === key);
     $("title").textContent = label(key);
-    view.innerHTML = render(day.md);
+    showDay(view, day, day === data.days[0]);
   }
-  for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-current", String(b.dataset.key === key));
+  for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-current", String(b.dataset.key === key));
+  headH();
   window.scrollTo(0, 0);
 }
 
@@ -397,6 +489,7 @@ function open() {
   items.splice(Math.min(1, items.length), 0, ["dash", "ダッシュボード"]);
   if (data.toeic) items.splice(Math.min(1, items.length), 0, ["toeic", "単語テスト"]);
   if (data.study) items.splice(Math.min(1, items.length), 0, ["study", "勉強"]);
+  if (data.days.length && data.days[0].blocks) items.splice(1, 0, ["tasks", "タスク"]);
   quiz = null;
   for (const [key, text] of items) {
     const b = document.createElement("button");
