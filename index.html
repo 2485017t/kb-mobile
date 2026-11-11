@@ -64,7 +64,29 @@ main .wrap { padding-block: 8px 48px; }
 .seg button { font: inherit; font-size: .9rem; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--sub); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .src { color: var(--sub); font-size: .8rem; margin-top: 24px; }
-h2.next { font-family: var(--display); font-size: 1.35rem; margin: 36px 0 12px; padding-top: 20px; border-top: 3px double var(--line); }
+/* 勉強タブ: 重点と明日は開け閉め。時間割は左に時刻、右にやること・範囲。やり方は別表 */
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--sub); transition: transform .15s; }
+details[open] > summary::before { transform: rotate(90deg); }
+details.focus { margin: 12px 0 0; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+details.focus > summary { font-weight: 700; }
+details.focus ul { margin: 4px 0 2px; font-size: .92rem; }
+details.next { margin: 32px 0 0; padding-top: 16px; border-top: 3px double var(--line); }
+details.next > summary { font-family: var(--display); font-size: 1.25rem; }
+.plan { border-top: 1px solid var(--line); }
+.blk { display: grid; grid-template-columns: 6.4em minmax(0, 1fr); gap: 0 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.blk .t { font-size: .82rem; line-height: 1.6; padding-top: 2px; color: var(--sub); font-variant-numeric: tabular-nums; }
+.blk.must .t { color: var(--accent); font-weight: 700; }
+.blk.notime .t { color: var(--ink); font-weight: 700; }
+.blk .h { font-weight: 700; line-height: 1.6; }
+.blk .mark { color: var(--accent); margin-left: 4px; }
+.blk .r { font-size: .95rem; line-height: 1.6; }
+.blk .do { font-weight: 700; margin-right: .45em; }
+.blk .warn-note { color: var(--warn); font-size: .85rem; line-height: 1.5; }
+.how { display: grid; grid-template-columns: 6.4em minmax(0, 1fr); gap: 6px 10px; margin: 8px 0; font-size: .88rem; line-height: 1.6; }
+.how dt { font-weight: 700; color: var(--accent); }
+.how dd { margin: 0; }
 .err { color: var(--warn); }
 .lock { display: flex; flex-direction: column; gap: 14px; padding-block: 18vh 32px; max-width: 24rem; }
 .lock h1 { font-family: var(--display); font-size: 1.6rem; margin: 0; }
@@ -224,14 +246,25 @@ function showQuiz() {
   view.appendChild(box);
 }
 
-// 今日と明日の勉強。休日・水曜は型が2つあり、どちらにしたかは日ごとにこの端末に覚えておく
+// 今日と明日の勉強。休日・水曜は型が2つあり、どちらにしたかは日ごとにこの端末に覚えておく。
+// 一覧は「時刻・やること・範囲」だけ、やり方は下の別表。今日の重点と明日の分は開け閉めでき、その状態もこの端末に覚えておく
+const studyOpen = (k, def) => { try { const v = localStorage.getItem("kb-study-open-" + k); return v == null ? def : v === "1"; } catch (e) { return def; } };
+const studyKeep = (k, open) => { try { localStorage.setItem("kb-study-open-" + k, open ? "1" : "0"); } catch (e) {} };
+function fold(cls, key, def, summary) {
+  const d = el("details", cls); d.open = studyOpen(key, def);
+  d.appendChild(el("summary", "", summary));
+  d.addEventListener("toggle", () => studyKeep(key, d.open));
+  return d;
+}
+
 function showStudy(view) {
   const y = window.scrollY;
   view.innerHTML = "";
   studyDay(view, data.study);
   if (data.study.next) {
-    view.appendChild(el("h2", "next", `明日 ${label(data.study.next.date)}の勉強`));
-    studyDay(view, data.study.next);
+    const nx = fold("next", "next", false, `明日 ${label(data.study.next.date)}の勉強`);
+    studyDay(nx, data.study.next);
+    view.appendChild(nx);
   }
   view.appendChild(memoBox(view));
   window.scrollTo(0, y);  // 明日の型を選び直しても、見ている位置のまま
@@ -242,19 +275,52 @@ function studyDay(view, s) {
   let pick = ""; try { pick = localStorage.getItem(vkey) || ""; } catch (e) {}
   const v = s.variants.find(x => x.key === pick) || s.variants[0];
   if (s.variants.length > 1) {
-    const seg = document.createElement("div"); seg.className = "seg";
+    const seg = el("div", "seg");
     for (const x of s.variants) {
-      const b = document.createElement("button");
-      b.type = "button"; b.textContent = x.label; b.setAttribute("aria-pressed", String(x === v));
-      b.addEventListener("click", () => { try { localStorage.setItem(vkey, x.key); } catch (e) {} showStudy(view); });
+      const b = el("button", "", x.label);
+      b.type = "button"; b.setAttribute("aria-pressed", String(x === v));
+      b.addEventListener("click", () => { try { localStorage.setItem(vkey, x.key); } catch (e) {} showStudy($("view")); });
       seg.appendChild(b);
     }
     view.appendChild(seg);
   }
-  view.insertAdjacentHTML("beforeend", render(v.md));
-  const src = document.createElement("p"); src.className = "src";
-  src.textContent = `${label(s.date)}の分。進み具合: ${s.source}`;
-  view.appendChild(src);
+  if (!v.blocks) view.insertAdjacentHTML("beforeend", render(v.md));  // 古い形のデータ
+  else {
+    if (v.focus.length) {
+      const f = fold("focus", "focus", true, `${s.word || label(s.date)}の重点`);
+      const ul = el("ul");
+      for (const x of v.focus) ul.appendChild(el("li", "", x));
+      f.appendChild(ul);
+      view.appendChild(f);
+    }
+    view.appendChild(el("h2", "", "時間割"));
+    const plan = el("div", "plan");
+    for (const b of v.blocks) {
+      const row = el("div", "blk" + (b.mark === "◎" ? " must" : "") + (b.time ? "" : " notime"));
+      row.appendChild(el("div", "t", b.time || b.title));
+      const body = el("div", "b");
+      if (b.time && b.title) {
+        const h = el("div", "h", b.title);
+        if (b.mark) h.appendChild(el("span", "mark", b.mark));
+        body.appendChild(h);
+      }
+      if (b.note) body.appendChild(el("div", "warn-note", b.note));
+      for (const r of b.rows) {
+        const p = el("div", "r");
+        if (r.do) p.appendChild(el("span", "do", r.do));
+        if (r.range) p.appendChild(document.createTextNode(r.range));
+        body.appendChild(p);
+      }
+      row.appendChild(body);
+      plan.appendChild(row);
+    }
+    view.appendChild(plan);
+    view.appendChild(el("h2", "", "やり方"));
+    const dl = el("dl", "how");
+    for (const [k, t] of v.how) { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", t)); }
+    view.appendChild(dl);
+  }
+  view.appendChild(el("p", "src", `${label(s.date)}の分。進み具合: ${s.source}`));
 }
 
 // 1日の終わりの勉強メモ。ショートカット「勉強メモ」が txt にして Dropbox に置き、土曜の見直しが読む
