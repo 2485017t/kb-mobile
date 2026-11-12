@@ -148,6 +148,11 @@ details.gtd-group ul.gtd { margin-top: 8px; }
 .gtd .body { flex: 1; min-width: 0; }
 .gtd .del { flex: none; border: 1px solid var(--line); background: transparent; color: var(--sub); border-radius: 8px; padding: 2px 8px; font-size: .9rem; }
 .gtd li.gone { opacity: .4; }
+.gtd .done { flex: none; border: 1px solid var(--line); background: transparent; color: var(--sub); border-radius: 8px; padding: 2px 8px; font-size: .9rem; }
+.gtd-add { margin: 8px 0 16px; }
+.gtd-add textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: inherit; }
+.gtd-add .row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.gtd-add .sub { font-size: .8rem; }
 .note li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.3em; padding-left: 1.4em; text-indent: -1.4em; }
 .note li > input[type="checkbox"] { margin: 0 .4em 0 0; }
 .btn.cal { display: inline-block; text-decoration: none; color: var(--accent); border-color: var(--accent); font-weight: 700; padding: 6px 14px; }
@@ -157,6 +162,16 @@ details.sec > summary { font-weight: 700; }
 details.sec > summary.warn { color: var(--warn); }
 details.sec .count { display: block; margin-left: 1.1em; font-weight: 400; font-size: .82rem; color: var(--sub); }
 details.sec > summary.warn .count { color: var(--warn); }
+.ev-day { margin: 16px 0 4px; font-size: 1rem; }
+.ev-day.today { color: var(--accent); }
+ul.ev { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+ul.ev li { display: flex; gap: 10px; padding: 8px 12px; line-height: 1.5; }
+ul.ev li + li { border-top: 1px solid var(--line); }
+ul.ev li.past { opacity: .45; }
+ul.ev .t { flex: none; width: 6.6em; color: var(--sub); font-variant-numeric: tabular-nums; font-size: .88rem; }
+ul.ev .cal { display: block; color: var(--sub); font-size: .76rem; }
+details.proj .count { white-space: normal; }
+.sub.warn { color: var(--warn); }
 /* 今日のメモ: 右上のボタンで下から出す */
 .head-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .btn.memo-btn { color: var(--accent); border-color: var(--accent); font-weight: 700; }
@@ -250,7 +265,7 @@ const store = {
   clear() { try { localStorage.removeItem(KEY); } catch (e) {} },
 };
 
-let enc = null, data = null;
+let enc = null, data = null, rawKey = null;  // rawKey: 合言葉から作った鍵(スマホのメモを暗号化して送るのにも使う)
 function showLock(msg) {
   $("app").hidden = true; $("lock").hidden = false;
   $("lockMsg").hidden = !msg; $("lockMsg").textContent = msg || "";
@@ -556,20 +571,55 @@ function showDay(view, day, isToday) {
 // 上の2つ(すぐにやること・次にやるべきこと)は開き、ほかはたたむ。Notion が読めない日は Daily のタスクを出す
 const GTD_OPEN = ["☑すぐにやること", "🔆次にやるべきこと"];
 function gtdLink(url, text) { const a = el("a", "btn cal", text); a.href = url; a.target = "_blank"; a.rel = "noopener"; return a; }
-// 🗑: Notion のページ id だけを ntfy に送る(公開サーバーなので名前は送らない)。PC の次のページ作り(朝・夜)で受け取り、
-// 次の朝の計画(kb-plan)が Notion で option を「🗑️ゴミ箱」にする。それまではこの端末で隠しておく(3日で忘れる)
+// 🗑・✓・＋メモ: ntfy(公開サーバー)の del_topic に送る。🗑はページ id だけ、✓は「done:<id>」、メモは合言葉の鍵で暗号化して「memo:<暗号文>」
+// (公開サーバーなので名前やメモの文は平文で送らない)。PC が数時間ごとに受け取り、次の朝の計画(kb-plan)が Notion に反映する
+// (🗑は option を「🗑️ゴミ箱」、✓はステータスを「完了」、メモは🔆次にやるべきことの新しいタスク)。それまではこの端末で隠しておく(3日で忘れる)
 const GTD_DEL_KEY = "kb-gtd-del";
 const gtdGone = () => { try { const o = JSON.parse(localStorage.getItem(GTD_DEL_KEY)) || {}; const now = Date.now();
   for (const k in o) if (now - o[k] > 3 * 864e5) delete o[k]; return o; } catch (e) { return {}; } };
 const gtdForget = id => { try { const o = gtdGone(); o[id] = Date.now(); localStorage.setItem(GTD_DEL_KEY, JSON.stringify(o)); } catch (e) {} };
-async function gtdTrash(t, li, btn) {
-  if (!confirm(`「${t.name}」を Notion のゴミ箱に入れますか?(次の朝の計画で反映)`)) return;
+async function gtdSend(body) {
+  const r = await fetch("https://ntfy.sh/" + data.gtd.del_topic, { method: "POST", body });
+  if (!r.ok) throw new Error(r.status);
+}
+async function gtdMark(t, li, btn, done) {
+  const what = done ? "完了にしますか?(次の朝に Notion で完了)" : "Notion のゴミ箱に入れますか?(次の朝の計画で反映)";
+  if (!confirm(`「${t.name}」を${what}`)) return;
   btn.disabled = true;
   try {
-    const r = await fetch("https://ntfy.sh/" + data.gtd.del_topic, { method: "POST", body: t.id });
-    if (!r.ok) throw new Error(r.status);
+    await gtdSend(done ? "done:" + t.id : t.id);
     gtdForget(t.id); li.classList.add("gone"); btn.textContent = "済";
   } catch (e) { btn.disabled = false; alert("送れませんでした(通信を確かめてもう一度)"); }
+}
+async function seal(text) {  // AES-GCM。iv(12バイト)+暗号文 を base64 に。PC の gtd.py が同じ合言葉から鍵を作って開ける
+  const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text)));
+  const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
+  return tob64(out);
+}
+const GTD_DRAFT = "kb-gtd-memo";
+function gtdAddBox() {
+  const box = el("div", "gtd-add");
+  const t = el("textarea"); t.rows = 2; t.placeholder = "思いついたこと・やること(1件ずつ)"; t.setAttribute("aria-label", "Notion に足すタスク");
+  try { t.value = localStorage.getItem(GTD_DRAFT) || ""; } catch (e) {}
+  t.addEventListener("input", () => { try { localStorage.setItem(GTD_DRAFT, t.value); } catch (e) {} });
+  const msg = el("span", "sub", "");
+  const send = btn("＋ Notion に送る", "primary", async () => {
+    const text = t.value.trim().replace(/\s*\n\s*/g, " ");
+    if (!text) { t.focus(); return; }
+    if (text.length > 200) { msg.textContent = "200字までにしてください"; return; }
+    send.disabled = true;
+    try {
+      await gtdSend("memo:" + await seal(text));
+      t.value = ""; try { localStorage.removeItem(GTD_DRAFT); } catch (e) {}
+      msg.textContent = `送りました: ${text.slice(0, 20)}${text.length > 20 ? "…" : ""}(次の朝に Notion へ)`;
+    } catch (e) { msg.textContent = "送れませんでした(通信を確かめてもう一度)"; }
+    send.disabled = false;
+  });
+  const row = el("div", "row"); row.appendChild(send); row.appendChild(msg);
+  box.appendChild(t); box.appendChild(row);
+  return box;
 }
 function showTasks(view) {
   view.innerHTML = "";
@@ -580,6 +630,7 @@ function showTasks(view) {
     view.appendChild(daily ? mdBox(daily) : el("p", "empty", "今日のタスクはまだありません(朝の計画ができると入ります)。"));
     return;
   }
+  if (g.del_topic && rawKey) view.appendChild(gtdAddBox());
   if (!g.tasks.length) { view.appendChild(el("p", "empty", "未完了のタスクはありません。")); return; }
   const groups = new Map();
   const gone = gtdGone();
@@ -599,14 +650,101 @@ function showTasks(view) {
       if (t.status === "進行中") meta.appendChild(el("span", "lab doing", "進行中"));
       if (t.minutes) meta.appendChild(el("span", "mins", `${t.minutes}分`));
       if (meta.childNodes.length) body.appendChild(meta);
-      if (g.del_topic && t.id) { const b = el("button", "del", "🗑"); b.type = "button"; b.setAttribute("aria-label", "ゴミ箱に入れる");
-        b.addEventListener("click", () => gtdTrash(t, li, b)); li.appendChild(b); }
+      if (g.del_topic && t.id) {
+        const d = el("button", "done", "✓"); d.type = "button"; d.setAttribute("aria-label", "完了にする");
+        d.addEventListener("click", () => gtdMark(t, li, d, true)); li.appendChild(d);
+        const b = el("button", "del", "🗑"); b.type = "button"; b.setAttribute("aria-label", "ゴミ箱に入れる");
+        b.addEventListener("click", () => gtdMark(t, li, b, false)); li.appendChild(b);
+      }
       ul.appendChild(li);
     }
     box.appendChild(ul);
     view.appendChild(box);
   }
-  view.appendChild(el("p", "src", `Notion の GTD taskDB(${g.at} に読んだ)。終わったら Notion でステータスを「完了」に。要らないものは🗑(次の朝に Notion でゴミ箱へ)`));
+  view.appendChild(el("p", "src", `Notion の GTD taskDB(${g.at} に読んだ)。終わったら✓、要らないものは🗑、思いついたことは上の欄から(どれも次の朝に Notion へ)`));
+}
+
+// 予定のタブ: 今日から7日分を日ごとに。終わった予定は薄く
+function showSchedule(view) {
+  view.innerHTML = "";
+  const sc = data.schedule, now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const evs = (sc.events || []).filter(e => e.date >= today);
+  if (!evs.length) view.appendChild(el("p", "empty", "7日以内の予定はありません。"));
+  let day = null, ul = null;
+  for (const e of evs) {
+    if (e.date !== day) {
+      day = e.date;
+      view.appendChild(el("h2", "ev-day" + (day === today ? " today" : ""), (day === today ? "今日 " : "") + label(day)));
+      ul = el("ul", "ev"); view.appendChild(ul);
+    }
+    const li = el("li", e.date === today && e.to && e.to < hm ? "past" : "");
+    li.appendChild(el("span", "t", e.allday ? "終日" : `${e.from}〜${e.to || ""}`));
+    const b = el("span", "", e.title); if (e.calendar) b.appendChild(el("span", "cal", e.calendar));
+    li.appendChild(b); ul.appendChild(li);
+  }
+  const row = el("p", "calrow"); const a = el("a", "btn cal", "📅 カレンダーを開く"); a.href = CAL; a.target = "_blank"; a.rel = "noopener";
+  row.appendChild(a); view.appendChild(row);
+  view.appendChild(el("p", "src", sc.source === "calendar" ? `Google カレンダー(${data.updated.slice(11)} に読んだ)` : "カレンダーを読めなかったので、今日の Daily の予定の表から出しています"));
+}
+
+// 柱のタブ(院試・メンター・大学など。kb/scripts/viewer/pillars.json で決める): 上から
+// 関連の画面へのボタン・締切・Slack の動き・タスク(✓🗑つき)・7日の予定・ノート(30日以内に更新、新しい順)
+const LINKS = { study: ["📘 勉強の段取り", "study"], toeic: ["🔤 単語テスト", "toeic"] };
+function pillarHead(view, text) { view.appendChild(el("h2", "ev-day", text)); }
+function showPillar(view, pl) {
+  view.innerHTML = "";
+  if (pl.sub) view.appendChild(el("p", "sub", pl.sub));
+  const links = pl.links.filter(k => (k === "study" && data.study) || (k === "toeic" && data.toeic));
+  if (links.length) { const row = el("p", "calrow"); for (const k of links) row.appendChild(btn(LINKS[k][0], "", () => show(LINKS[k][1]))); view.appendChild(row); }
+  if (pl.deadlines) { pillarHead(view, "締切"); view.appendChild(mdBox(pl.deadlines)); }
+  if (pl.slack) { pillarHead(view, "Slack の動き"); view.appendChild(mdBox(pl.slack)); }
+  const g = data.gtd || {}, gone = gtdGone(), tasks = pl.tasks.filter(t => !gone[t.id]);
+  pillarHead(view, `タスク ${tasks.length}件`);
+  if (!tasks.length) view.appendChild(el("p", "sub", "この柱の未完了のタスクはありません。"));
+  else {
+    const ul = el("ul", "gtd");
+    for (const t of [...tasks].sort((x, y) => y.today - x.today)) {
+      const li = el("li", t.today ? "today" : ""), body = el("div", "body");
+      const a = el("a", "", t.name); a.href = t.url; a.target = "_blank"; a.rel = "noopener";
+      body.appendChild(a);
+      const meta = el("span", "meta");
+      if (t.option) meta.appendChild(el("span", "mins", t.option));
+      if (t.today) meta.appendChild(el("span", "lab", "今日"));
+      if (t.minutes) meta.appendChild(el("span", "mins", `${t.minutes}分`));
+      body.appendChild(meta); li.appendChild(body);
+      if (g.del_topic && t.id) {
+        const d = el("button", "done", "✓"); d.type = "button"; d.setAttribute("aria-label", "完了にする");
+        d.addEventListener("click", () => gtdMark(t, li, d, true)); li.appendChild(d);
+        const b = el("button", "del", "🗑"); b.type = "button"; b.setAttribute("aria-label", "ゴミ箱に入れる");
+        b.addEventListener("click", () => gtdMark(t, li, b, false)); li.appendChild(b);
+      }
+      ul.appendChild(li);
+    }
+    const box = el("div", "note"); box.appendChild(ul); view.appendChild(box);
+  }
+  const now = new Date(), today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const evs = pl.events.filter(e => e.date >= today);
+  if (evs.length) {
+    pillarHead(view, "7日の予定");
+    const ul = el("ul", "ev");
+    for (const e of evs) {
+      const li = el("li");
+      li.appendChild(el("span", "t", `${label(e.date)} ${e.allday ? "終日" : e.from}`));
+      li.appendChild(el("span", "", e.title)); ul.appendChild(li);
+    }
+    view.appendChild(ul);
+  }
+  if (pl.notes.length) {
+    pillarHead(view, "ノート");
+    for (const n of pl.notes) {
+      const f = el("details", "sec proj"), sm = el("summary", "", n.title);
+      const c = el("span", "count", [`${n.updated} 更新`, n.due, n.last].filter(Boolean).join("\n")); c.style.whiteSpace = "pre-line";
+      sm.appendChild(c); f.appendChild(sm); f.appendChild(mdBox(n.md)); view.appendChild(f);
+    }
+  }
+  view.appendChild(el("p", "src", "この柱の中身は kb/scripts/viewer/pillars.json で決めています(タスクは名前、予定は題名の語で振り分け。課題の正解の行は出しません)"));
 }
 
 // 今日のメモは右上のボタンから、どのタブ・どの位置でも開ける
@@ -634,9 +772,22 @@ function show(key) {
     $("title").textContent = "ダッシュボード";
     view.innerHTML = data.dashboard ? render(data.dashboard) : `<p class="empty">ダッシュボードがまだありません。</p>`;
     soften(view);
+    const rv = data.pillar_review;  // 柱の見直しの声かけ(進めているプロジェクトとタブがずれてきたら)
+    if (rv && (rv.new.length || rv.quiet.length)) {
+      const msg = [rv.new.length && `最近動いているのに柱にない: ${rv.new.join("、")}`, rv.quiet.length && `30日動いていない柱: ${rv.quiet.join("、")}`].filter(Boolean).join("。");
+      const p = el("p", "sub warn", `🧭 柱の見直し: ${msg}。Claude に「スマホの柱を見直して」と頼むと pillars.json を直します`);
+      view.insertBefore(p, view.firstChild);
+    }
   } else if (key === "study") {
     $("title").textContent = "勉強";
     showStudy(view);
+  } else if (key === "schedule") {
+    $("title").textContent = "予定";
+    showSchedule(view);
+  } else if (key.startsWith("p:")) {
+    const pl = data.pillars.find(x => "p:" + x.key === key);
+    $("title").textContent = pl.name;
+    showPillar(view, pl);
   } else if (key === "tasks") {
     $("title").textContent = "タスク" + (data.days[0] ? " " + label(data.days[0].date) : "");
     showTasks(view);
@@ -654,11 +805,16 @@ function open() {
   $("lock").hidden = true; $("app").hidden = false;
   $("updated").textContent = "PC で更新 " + data.updated.slice(5).replace("-", "/");
   const nav = $("tabs"); nav.innerHTML = "";
-  const items = data.days.map((d, i) => [d.date, i === 0 ? "今日 " + label(d.date) : label(d.date)]);
-  items.splice(Math.min(1, items.length), 0, ["dash", "ダッシュボード"]);
-  if (data.toeic) items.splice(Math.min(1, items.length), 0, ["toeic", "単語テスト"]);
-  if (data.study) items.splice(Math.min(1, items.length), 0, ["study", "勉強"]);
-  if ((data.days.length && data.days[0].blocks) || data.gtd) items.splice(1, 0, ["tasks", "タスク"]);
+  // 並び: 今日 → 柱(院試・メンター・大学…) → タスク → 予定 → (柱にない勉強・単語テスト) → ダッシュボード → 前の日
+  const linked = new Set((data.pillars || []).flatMap(p => p.links));
+  const items = data.days.length ? [[data.days[0].date, "今日 " + label(data.days[0].date)]] : [];
+  for (const p of data.pillars || []) items.push(["p:" + p.key, p.name]);
+  if ((data.days.length && data.days[0].blocks) || data.gtd) items.push(["tasks", "タスク"]);
+  if (data.schedule) items.push(["schedule", "予定"]);
+  if (data.study && !linked.has("study")) items.push(["study", "勉強"]);
+  if (data.toeic && !linked.has("toeic")) items.push(["toeic", "単語テスト"]);
+  items.push(["dash", "ダッシュボード"]);
+  for (const d of data.days.slice(1)) items.push([d.date, label(d.date)]);
   quiz = null;
   for (const [key, text] of items) {
     const b = document.createElement("button");
@@ -675,7 +831,7 @@ $("lockForm").addEventListener("submit", async e => {
   try {
     const raw = await deriveRaw($("pass").value, enc);
     data = await decrypt(raw, enc);
-    store.set(tob64(raw)); $("pass").value = ""; open();
+    rawKey = raw; store.set(tob64(raw)); $("pass").value = ""; open();
   } catch (err) { showLock("合言葉が違うようです。PC の合言葉ファイルの1行目と同じか確かめてください。"); }
   $("unlock").disabled = false;
 });
@@ -693,7 +849,7 @@ $("forget").addEventListener("click", () => { store.clear(); data = null; showLo
   }
   const saved = store.get();
   if (saved) {
-    try { data = await decrypt(unb64(saved), enc); open(); return; }
+    try { data = await decrypt(unb64(saved), enc); rawKey = unb64(saved); open(); return; }
     catch (e) { store.clear(); showLock("合言葉が変わったようです。もう一度入れてください。"); return; }
   }
   showLock();
