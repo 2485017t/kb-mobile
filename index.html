@@ -172,6 +172,9 @@ ul.ev .t { flex: none; width: 6.6em; color: var(--sub); font-variant-numeric: ta
 ul.ev .cal { display: block; color: var(--sub); font-size: .76rem; }
 details.proj .count { white-space: normal; }
 .sub.warn { color: var(--warn); }
+/* 習慣のきっかけ: 今日のタブの上に小さく薄い1行。✕で今日は隠す */
+.habit { display: flex; align-items: center; gap: 6px; margin: 4px 0 2px; color: var(--sub); font-size: .8rem; line-height: 1.5; }
+.habit button { font: inherit; background: none; border: 0; padding: 2px 6px; color: var(--sub); cursor: pointer; opacity: .7; }
 /* 今日のメモ: 右上のボタンで下から出す */
 .head-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .btn.memo-btn { color: var(--accent); border-color: var(--accent); font-weight: 700; }
@@ -537,9 +540,27 @@ function memoBox(rerender) {
 // 日ごとのタブ。Daily をそのまま出さず、計画と単語を上に、カレンダーはリンクだけ、メール・ニュース・計画のメモはたたむ。
 // 今日のタスク(やること・すぐ済むこと・持ち越し)は「タスク」のタブ、過ぎた日のタスクはたたんでここに
 const CAL = "https://calendar.google.com/calendar/r/week";
+// 習慣のきっかけ(data.habits): 今の時刻と平日/休日(土日)に合う1つだけを小さく出す。✕でその日は出さない
+const HABIT_KEY = "kb-habit-hide";
+function habitLine() {
+  const now = new Date(), h = now.getHours(), wd = now.getDay();
+  const kind = wd === 0 || wd === 6 ? "holiday" : "weekday";
+  const today = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  let hidden = null; try { hidden = localStorage.getItem(HABIT_KEY); } catch (e) {}
+  if (hidden === today) return null;
+  const it = (data.habits || []).find(x => h >= x.from && h < x.to && (x.days === "all" || x.days === kind));
+  if (!it) return null;
+  const p = el("p", "habit", "🌱 " + it.text);
+  const x = el("button", "", "✕"); x.type = "button"; x.setAttribute("aria-label", "今日は出さない");
+  x.addEventListener("click", () => { try { localStorage.setItem(HABIT_KEY, today); } catch (e) {} p.remove(); });
+  p.appendChild(x);
+  return p;
+}
 function showDay(view, day, isToday) {
   if (!day.blocks) { view.innerHTML = render(day.md); return; }
   view.innerHTML = "";
+  const hab = isToday && habitLine();
+  if (hab) view.appendChild(hab);
   const order = { plain: 0, cal: 1, fold: 2 };
   const blocks = [...day.blocks].sort((a, b) => order[a.kind] - order[b.kind]);
   for (const b of blocks) {
