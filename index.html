@@ -551,10 +551,17 @@ function habitLine() {
   const it = (data.habits || []).find(x => h >= x.from && h < x.to && (x.days === "all" || x.days === kind));
   if (!it) return null;
   const p = el("p", "habit", "🌱 " + it.text);
+  const box = el("div", "");
+  box.appendChild(p);
+  if (h >= 6 && h < 10) {  // 朝は解き直しの候補(data.resolve)を下に。なければ前回の節を白紙に
+    const rs = data.resolve || [];
+    const lines = rs.length ? rs.map(r => `解き直し: ${r.name}(${r.ago})`) : ["解き直し: 前回の節を、本を閉じて白紙に書き出す"];
+    for (const t of lines) { const q = el("p", "habit", t); q.style.margin = "0 0 2px 1.4em"; box.appendChild(q); }
+  }
   const x = el("button", "", "✕"); x.type = "button"; x.setAttribute("aria-label", "今日は出さない");
-  x.addEventListener("click", () => { try { localStorage.setItem(HABIT_KEY, today); } catch (e) {} p.remove(); });
+  x.addEventListener("click", () => { try { localStorage.setItem(HABIT_KEY, today); } catch (e) {} box.remove(); });
   p.appendChild(x);
-  return p;
+  return box;
 }
 function showDay(view, day, isToday) {
   if (!day.blocks) { view.innerHTML = render(day.md); return; }
